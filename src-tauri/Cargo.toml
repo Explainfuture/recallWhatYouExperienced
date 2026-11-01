@@ -1,0 +1,19 @@
+[package]
+name = "recall"
+version = "0.1.0"
+description = "A small, local-first journal for recalling what you experienced"
+authors = ["Explainfuture"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "recall_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+
