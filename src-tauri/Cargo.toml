@@ -1,6 +1,6 @@
 [package]
 name = "recall"
-version = "0.3.0"
+version = "0.3.1"
 description = "A small, local-first journal for recalling what you experienced"
 authors = ["Explainfuture"]
 edition = "2021"

@@ -22,7 +22,7 @@ export default function RecallHistory({ session, disabled, onRename }: { session
 
   return <section ref={section} className="history" aria-label="历次记录">
     {entry ? <div className="recall-detail" key={entry.id}>
-      <button type="button" className="recall-back" onClick={back} disabled={disabled}><span aria-hidden="true">←</span>全部记录</button>
+      <button type="button" className="recall-back" onClick={back} disabled={disabled} aria-label="返回全部记录"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m14 6-6 6 6 6" /></svg><span>返回记录</span></button>
       <div className="recall-detail-heading">
         {entry.title && <span className="recall-detail-ordinal">{ordinal(index)}</span>}
         <EditableTitle as="h2" value={entry.title || ordinal(index)} label="回忆标题" onSave={(title) => onRename(entry.id, title)} disabled={disabled} />

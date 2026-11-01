@@ -18,8 +18,21 @@
   outline: none;
   max-width: calc(100vw - 24px);
   max-height: min(440px, var(--radix-popover-content-available-height, var(--radix-dropdown-menu-content-available-height, 440px)));
+  overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
   transform-origin: var(--radix-popover-content-transform-origin, var(--radix-dropdown-menu-content-transform-origin));
+}
+.interaction-content:hover, .interaction-content:focus-within { scrollbar-color: #bfb6a7 transparent; }
+.interaction-content::-webkit-scrollbar { width: 6px; height: 6px; }
+.interaction-content::-webkit-scrollbar-track, .interaction-content::-webkit-scrollbar-corner { background: transparent; }
+.interaction-content::-webkit-scrollbar-thumb { border-radius: 999px; background: transparent; }
+.interaction-content:hover::-webkit-scrollbar-thumb, .interaction-content:focus-within::-webkit-scrollbar-thumb { background: #bfb6a7; }
+.interaction-content::-webkit-scrollbar-thumb:hover { background: #9f9484; }
+.interaction-content::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+@supports selector(::-webkit-scrollbar) {
+  .interaction-content, .interaction-content:hover, .interaction-content:focus-within { scrollbar-width: auto; scrollbar-color: auto; }
 }
 .interaction-content[data-state="open"] { animation: interaction-appear 120ms cubic-bezier(.2,.7,.2,1); }
 .interaction-content[data-state="closed"] { animation: interaction-disappear 80ms ease-in; }
@@ -37,7 +50,7 @@
 .interaction-more-trigger:focus-visible, .interaction-picker-trigger:focus-visible { outline: 1px solid #a99b89; outline-offset: 2px; }
 .interaction-more-trigger:disabled, .interaction-picker-trigger:disabled { opacity: .45; cursor: default; }
 .interaction-heading { padding: 7px 10px 8px; color: var(--interaction-muted); font-size: 12px; font-weight: 500; }
-.interaction-folder-options { max-height: 285px; overflow-y: auto; scrollbar-width: thin; }
+.interaction-folder-options { min-width: 0; }
 .interaction-menu-item, .interaction-folder-option, .interaction-create-button { display: flex; align-items: center; gap: 10px; box-sizing: border-box; min-height: 36px; width: 100%; padding: 8px 10px; border: 0; border-radius: 5px; background: none; color: var(--interaction-ink); font: inherit; font-size: 14px; line-height: 1.45; text-align: left; text-decoration: none; cursor: pointer; outline: none; user-select: none; }
 .interaction-menu-item[data-highlighted], .interaction-menu-item[data-state="open"],
 .interaction-folder-option:hover, .interaction-folder-option:focus-visible, .interaction-create-button:hover, .interaction-create-button:focus-visible { background: var(--interaction-hover); color: var(--interaction-ink); }
