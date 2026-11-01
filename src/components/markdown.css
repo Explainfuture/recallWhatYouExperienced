@@ -34,21 +34,33 @@
 
 .markdown-editor { margin: 14px 24px 0; border: 1px solid transparent; border-radius: 6px; transition: border-color .12s ease; }
 .markdown-editor:focus-within { border-color: #d5cbbd; }
-.markdown-editor-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 8px 0; min-height: 34px; border-bottom: 1px solid #eee9df; }
-.markdown-editor-tabs, .markdown-format-actions { display: flex; align-items: center; gap: 13px; }
-.markdown-editor-toolbar button { background: none; border: 0; border-radius: 2px; color: #9a8c79; font-size: 12px; line-height: 1.6; padding: 5px 0 8px; }
-.markdown-editor-tabs button[aria-selected="true"] { color: #88694d; box-shadow: inset 0 -1px #b79c7b; }
-.markdown-editor-toolbar button:hover { color: #856345; }
-.markdown-format-actions { gap: 11px; }
-.markdown-format-actions button { font-size: 12px; color: #a79a86; }
-.editor-card .markdown-editor textarea { display: block; width: 100%; min-height: 235px; margin: 0; padding: 17px 8px 24px; resize: vertical; color: #565047; background: none; border: 0; outline: none; box-shadow: none; font-size: 14px; line-height: 1.9; }
-.editor-card .markdown-editor textarea:focus, .editor-card .markdown-editor textarea:focus-visible { outline: none; box-shadow: none; }
-.markdown-editor-preview { min-height: 235px; padding: 17px 8px 24px; }
-.markdown-preview-empty { color: #ada18f; font-size: 12px; margin: 0; }
-.markdown-editor-toolbar button:focus-visible, .markdown-editor-preview:focus-visible,
+.markdown-live-editor { min-height: 265px; padding: 14px 8px 24px; border: 0; outline: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.markdown-live-editor:focus, .markdown-live-editor:focus-visible { outline: none; }
+.markdown-live-editor p { white-space: pre-wrap; }
+.markdown-live-editor p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; color: #ada18f; pointer-events: none; }
+.markdown-live-editor .tableWrapper { overflow-x: auto; margin: 1em 0; }
+.markdown-live-editor table { table-layout: fixed; min-width: 100%; }
+.markdown-live-editor th, .markdown-live-editor td { position: relative; min-width: 70px; vertical-align: top; }
+.markdown-live-editor th > :last-child, .markdown-live-editor td > :last-child { margin-bottom: 0; }
+.markdown-live-editor .selectedCell::after { position: absolute; z-index: 1; content: ''; inset: 0; pointer-events: none; background: #b7a58a30; }
+.markdown-live-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
+.markdown-live-editor ul[data-type="taskList"] > li { display: flex; align-items: flex-start; gap: 9px; }
+.markdown-live-editor ul[data-type="taskList"] > li > label { flex: 0 0 auto; user-select: none; padding-top: 3px; }
+.markdown-live-editor ul[data-type="taskList"] > li > label input { accent-color: #8f795a; cursor: pointer; }
+.markdown-live-editor ul[data-type="taskList"] > li > div { flex: 1; min-width: 0; }
+.markdown-live-editor ul[data-type="taskList"] > li p { margin: 0; }
+.markdown-live-editor ul[data-type="taskList"] ul { margin: .35em 0; padding-left: 1.2em; }
+.markdown-live-editor .ProseMirror-selectednode { outline: 1px solid #b7a58a; outline-offset: 2px; }
+.markdown-live-editor pre { tab-size: 2; }
+.markdown-live-editor pre code { display: block; white-space: pre; }
+.markdown-live-editor img { cursor: default; }
+.markdown-live-editor .markdown-footnote-reference { color: #8b725a; }
+.markdown-live-editor .markdown-footnote-definition { margin: 1em 0; padding: .4em 0 .4em 12px; border-left: 2px solid #d4c7b3; white-space: pre-wrap; font-size: 13px; color: #80715e; }
+.markdown-image-placeholder { color: #9a8c79; }
+.markdown-editor-live[aria-disabled="true"] { opacity: .65; }
 .markdown-content a:focus-visible, .markdown-link-error button:focus-visible { outline: 1px solid #bfad92; outline-offset: 3px; }
 @media (max-width: 580px) {
   .markdown-editor { margin-left: 18px; margin-right: 18px; }
-  .editor-card .markdown-editor textarea, .markdown-editor-preview { min-height: 210px; }
+  .markdown-live-editor { min-height: 230px; }
 }
 @media (prefers-reduced-motion: reduce) { .markdown-editor { transition: none; } }

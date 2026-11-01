@@ -2,11 +2,15 @@ export interface Entry {
   id: string;
   content: string;
   createdAt: string;
+  title?: string;
+  titleUpdatedAt?: string;
 }
 
 export interface Session {
   id: string;
   title: string;
+  /** Renaming is independent of recalling, so it never changes the review schedule. */
+  titleUpdatedAt?: string;
   createdAt: string;
   updatedAt: string;
   entries: Entry[];
@@ -147,6 +151,7 @@ export async function createSession(title: string, content: string, folderId: st
   const session: Session = {
     id: crypto.randomUUID(),
     title: nonempty(title, '事件名称'),
+    titleUpdatedAt: timestamp,
     createdAt: timestamp,
     updatedAt: timestamp,
     entries: [{ id: crypto.randomUUID(), content: nonempty(content, '初次记录'), createdAt: timestamp }],
@@ -183,6 +188,54 @@ export async function appendRecall(id: string, content: string): Promise<Session
         nextReviewAt: nextReviewDate(now, 7),
       };
       store.put(updated);
+      result(updated);
+    };
+  });
+}
+
+export async function renameSession(id: string, title: string): Promise<Session> {
+  const normalized = nonempty(title, '会话名称');
+  return transact('readwrite', ({ sessions }, result, fail) => {
+    const request = sessions.get(id);
+    request.onsuccess = () => {
+      const session = request.result as Session | undefined;
+      if (!session) {
+        fail(new Error('这个事件已被删除，请返回事件列表。'));
+        return;
+      }
+      const renamed: Session = {
+        ...session,
+        title: normalized,
+        titleUpdatedAt: latestTimestamp(session.titleUpdatedAt ?? session.createdAt),
+      };
+      sessions.put(renamed);
+      result(renamed);
+    };
+  });
+}
+
+export async function renameEntry(sessionId: string, entryId: string, title: string): Promise<Session> {
+  const normalized = nonempty(title, '记录标题');
+  return transact('readwrite', ({ sessions }, result, fail) => {
+    const request = sessions.get(sessionId);
+    request.onsuccess = () => {
+      const session = request.result as Session | undefined;
+      if (!session) {
+        fail(new Error('这个事件已被删除，请返回事件列表。'));
+        return;
+      }
+      const entry = session.entries.find((item) => item.id === entryId);
+      if (!entry) {
+        fail(new Error('这条记录已不存在，请重新打开会话后重试。'));
+        return;
+      }
+      const renamed: Entry = {
+        ...entry,
+        title: normalized,
+        titleUpdatedAt: latestTimestamp(entry.titleUpdatedAt ?? entry.createdAt),
+      };
+      const updated = { ...session, entries: session.entries.map((item) => item.id === entryId ? renamed : item) };
+      sessions.put(updated);
       result(updated);
     };
   });
@@ -373,6 +426,7 @@ function parseBackup(json: string): Backup {
       || (session.nextReviewAt !== null && !isTimestamp(session.nextReviewAt))
       || !Array.isArray(session.entries) || session.entries.length === 0
       || session.createdAt > session.updatedAt || sessionIds.has(session.id)) throw invalid();
+    if (session.titleUpdatedAt !== undefined && (!isTimestamp(session.titleUpdatedAt) || session.titleUpdatedAt < session.createdAt)) throw invalid();
     if (data.version === 2 && ((session.folderId !== null && (!isText(session.folderId) || !folderIds.has(session.folderId)))
       || !isTimestamp(session.folderUpdatedAt) || session.folderUpdatedAt < session.createdAt)) throw invalid();
     sessionIds.add(session.id);
@@ -382,6 +436,8 @@ function parseBackup(json: string): Backup {
       if (!isObject(entry) || !isText(entry.id) || !isText(entry.content)
         || !isTimestamp(entry.createdAt) || entry.createdAt < previousTime
         || entry.createdAt > session.updatedAt || entryIds.has(entry.id)) throw invalid();
+      if ((entry.title !== undefined && !isText(entry.title))
+        || (entry.titleUpdatedAt !== undefined && (!isText(entry.title) || !isTimestamp(entry.titleUpdatedAt) || entry.titleUpdatedAt < entry.createdAt))) throw invalid();
       entryIds.add(entry.id);
       previousTime = entry.createdAt;
     }
@@ -395,12 +451,19 @@ function parseBackup(json: string): Backup {
     sessions: data.sessions.map((session) => ({
       id: session.id,
       title: session.title,
+      ...(session.titleUpdatedAt !== undefined ? { titleUpdatedAt: session.titleUpdatedAt } : {}),
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
       nextReviewAt: session.nextReviewAt,
       folderId: data.version === 2 ? session.folderId : null,
       folderUpdatedAt: data.version === 2 ? session.folderUpdatedAt : session.createdAt,
-      entries: session.entries.map((entry: Entry) => ({ id: entry.id, content: entry.content, createdAt: entry.createdAt })),
+      entries: session.entries.map((entry: Entry) => ({
+        id: entry.id,
+        content: entry.content,
+        createdAt: entry.createdAt,
+        ...(entry.title !== undefined ? { title: entry.title } : {}),
+        ...(entry.titleUpdatedAt !== undefined ? { titleUpdatedAt: entry.titleUpdatedAt } : {}),
+      })),
     })),
   };
 }
@@ -416,12 +479,22 @@ function mergeSession(local: Session, incoming: Session): Session {
       throw new Error('备份中的记录与本地记录存在冲突，未导入任何数据。');
     }
     if (!existing) entries.set(entry.id, entry);
+    else if (entry.title && (!existing.title || (entry.titleUpdatedAt ?? entry.createdAt) > (existing.titleUpdatedAt ?? existing.createdAt))) {
+      entries.set(entry.id, {
+        ...existing,
+        title: entry.title,
+        ...(entry.titleUpdatedAt !== undefined ? { titleUpdatedAt: entry.titleUpdatedAt } : {}),
+      });
+    }
   }
   // On equal timestamps the local schedule wins. Old backups never replace newer records.
   const newest = incoming.updatedAt > local.updatedAt ? incoming : local;
   const newestFolder = incoming.folderUpdatedAt > local.folderUpdatedAt ? incoming : local;
+  const newestTitle = (incoming.titleUpdatedAt ?? incoming.createdAt) > (local.titleUpdatedAt ?? local.createdAt) ? incoming : local;
   return {
     ...local,
+    title: newestTitle.title,
+    ...(newestTitle.titleUpdatedAt !== undefined ? { titleUpdatedAt: newestTitle.titleUpdatedAt } : {}),
     updatedAt: newest.updatedAt,
     nextReviewAt: newest.nextReviewAt,
     folderId: newestFolder.folderId,

@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent, type ChangeEvent } from 'react';
-import { appendRecall, createSession, deleteSession, exportBackup, importBackup, isDue, listSessions, createFolder, listFolders, moveSession, renameFolder, deleteFolder, type Session, type Folder } from './lib/storage';
-import MarkdownContent from './components/MarkdownContent';
-import MarkdownEditor from './components/MarkdownEditor';
+import { lazy, Suspense, useEffect, useRef, useState, type FormEvent, type ChangeEvent } from 'react';
+import { appendRecall, createSession, deleteSession, exportBackup, importBackup, isDue, listSessions, createFolder, listFolders, moveSession, renameFolder, deleteFolder, renameSession, renameEntry, type Session, type Folder } from './lib/storage';
 import FolderPicker from './components/FolderPicker';
 import FolderActions from './components/FolderActions';
 import SessionActions from './components/SessionActions';
+import EditableTitle from './components/EditableTitle';
+import RecallHistory from './components/RecallHistory';
+
+const MarkdownEditor = lazy(() => import('./components/MarkdownEditor'));
+const editorFallback = <div className="editor-loading" role="status">正在准备编辑器…</div>;
 
 type IconName = 'plus' | 'arrow' | 'search' | 'download' | 'upload' | 'check' | 'trash' | 'close' | 'folder' | 'edit' | 'all';
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -24,10 +27,11 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
 }
 const dateFormat = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric' });
-const timeFormat = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 const draftKey = (id: string) => `recall:draft:v1:${id}`;
 type Draft = { title: string; content: string; folderId: string | null };
 type View = 'session' | 'new' | 'folder';
+type TitleChange = { sessionId: string; entryId?: string; title: string };
+const sameTitleTarget = (a: TitleChange, b: TitleChange) => a.sessionId === b.sessionId && a.entryId === b.entryId;
 type Confirmation = { kind: 'delete' } | { kind: 'navigate'; id: string | null; folderFilter?: string; view?: View } | { kind: 'folder'; folder: Folder };
 function emptyDraft(): Draft { return { title: '', content: '', folderId: null }; }
 function readDraft(id: string): Draft {
@@ -54,6 +58,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [error, setError] = useState('');
+  const [failedTitles, setFailedTitles] = useState<TitleChange[]>([]);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -156,6 +161,21 @@ export default function App() {
       setNotice(`已移至「${folders.find((folder) => folder.id === folderId)?.name ?? '未分类'}」`);
     } finally { busyRef.current = false; setBusy(false); }
   }
+  async function persistTitle(change: TitleChange) {
+    try {
+      const { sessionId, title, entryId } = change;
+      const renamed = entryId ? await renameEntry(sessionId, entryId, title) : await renameSession(sessionId, title);
+      setSessions((items) => items.map((item) => item.id === renamed.id ? renamed : item));
+      setFailedTitles((items) => items.filter((item) => !sameTitleTarget(item, change)));
+    } catch (reason) {
+      setFailedTitles((items) => [...items.filter((item) => !sameTitleTarget(item, change)), change]);
+      throw reason;
+    }
+  }
+  async function changeTitle(sessionId: string, title: string, entryId?: string) {
+    if (busyRef.current) throw new Error('正在保存，请稍后重试。');
+    await persistTitle({ sessionId, title, entryId });
+  }
   async function saveFolder(name: string) {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true);
@@ -244,17 +264,18 @@ export default function App() {
     </aside>
     <main className="main-panel" id="main-content"><div className="main-scroll"><div className="writing-area">
       {error && <div className="error-message" role="alert"><span>{error}</span>{loadError ? <button onClick={() => window.location.reload()}>重试</button> : <button aria-label="关闭错误提示" onClick={() => setError('')}><Icon name="close" size={16} /></button>}</div>}
+      {failedTitles.map((change) => <div key={`${change.sessionId}:${change.entryId ?? 'session'}`} className="error-message title-save-error" role="alert"><span>标题未保存：{change.title}</span><button disabled={unavailable} onClick={() => void runOperation(async () => { try { await persistTitle(change); } catch { /* Keep the title available for another attempt. */ } })}>重试</button><button disabled={unavailable} onClick={() => setFailedTitles((items) => items.filter((item) => !sameTitleTarget(item, change)))}>取消修改</button></div>)}
       {notice && <div className="toast" role="status"><Icon name="check" size={16} />{notice}</div>}
       <div className="content-entry" key={view === 'folder' ? `folder-${folderFilter}` : `${view}-${selectedId ?? 'draft'}`}>
       {selected ? <>
-        <div className="event-heading"><h1>{selected.title}</h1><button className="icon-button delete-button" aria-label="删除会话" title="删除会话" onClick={() => setConfirmation({ kind: 'delete' })} disabled={busy}><Icon name="trash" size={18} /></button></div>
+        <div className="event-heading"><EditableTitle value={selected.title} label="会话标题" onSave={(title) => changeTitle(selected.id, title)} disabled={unavailable} /><button className="icon-button delete-button" aria-label="删除会话" title="删除会话" onClick={() => setConfirmation({ kind: 'delete' })} disabled={busy}><Icon name="trash" size={18} /></button></div>
         <p className="event-subtitle"><span className="folder-badge"><Icon name="folder" size={14} />{folders.find((folder) => folder.id === selected.folderId)?.name ?? '未分类'}</span><span>·</span><span>{selected.entries.length - 1} 次回忆</span><span>·</span><span className={isDue(selected, now) ? 'due-text' : ''}>{reviewLabel(selected, now)}</span></p>
         <div className="session-toolbar"><FolderPicker folders={folders} value={selected.folderId} onChange={(id) => changeFolder(selected.id, id)} onCreate={() => setFolderDialog({ moveSessionId: selected.id })} disabled={unavailable} />{!composing && <button className="primary-button" onClick={() => setComposing(true)} disabled={busy}><Icon name="plus" size={17} />下一次回忆</button>}</div>
-        {composing && <form className="editor-card recall-editor" onSubmit={save}><div className="editor-heading"><span>第 {selected.entries.length} 次回忆</span><button type="button" className="text-button" onClick={() => setComposing(false)} disabled={busy}>收起</button></div><MarkdownEditor key={selected.id} id="recall-content" label="这次回忆" value={draft.content} onChange={(content) => updateDraft({ ...draft, content })} disabled={busy} autoFocus /><div className="editor-footer"><span className={draftWarning ? 'draft-warning' : ''}>{draftWarning ? '草稿暂存失败，请先保存' : `${draft.content.length} 字`}</span><button type="submit" className="primary-button" disabled={busy || !draft.content.trim()}>{busy ? '保存中…' : '保存这次回忆'}<Icon name="arrow" size={16} /></button></div></form>}
-        <section className="history" aria-label="历次记录"><div className="section-title"><h2>记录</h2><span>{selected.entries.length}</span></div>{composing ? <details className="past-records"><summary>查看历史记录</summary><Timeline session={selected} /></details> : <Timeline session={selected} />}</section>
+        {composing && <form className="editor-card recall-editor" onSubmit={save}><div className="editor-heading"><span>第 {selected.entries.length} 次回忆</span><button type="button" className="text-button" onClick={() => setComposing(false)} disabled={busy}>收起</button></div><Suspense fallback={editorFallback}><MarkdownEditor key={selected.id} id="recall-content" label="这次回忆" value={draft.content} onChange={(content) => updateDraft({ ...draft, content })} disabled={busy} autoFocus /></Suspense><div className="editor-footer"><span className={draftWarning ? 'draft-warning' : ''}>{draftWarning ? '草稿暂存失败，请先保存' : `${draft.content.length} 字`}</span><button type="submit" className="primary-button" disabled={busy || !draft.content.trim()}>{busy ? '保存中…' : '保存这次回忆'}<Icon name="arrow" size={16} /></button></div></form>}
+        <RecallHistory key={`${selected.id}-${composing ? 'writing' : 'reading'}`} session={selected} disabled={unavailable} onRename={(id, title) => changeTitle(selected.id, title, id)} />
       </> : view === 'folder' ? <section className="folder-overview"><div className="new-session-heading"><h1>{currentFolderName}</h1><button className="primary-button" onClick={() => openSession(null)} disabled={unavailable}><Icon name="plus" size={17} />新建会话</button></div>{inFolder.length ? <div className="folder-overview-list">{inFolder.map((session) => <button key={session.id} onClick={() => openSession(session.id)}><span>{session.title}</span><Icon name="arrow" size={16} /></button>)}</div> : <div className="empty-folder"><Icon name="folder" size={34} /><p>还没有会话</p><button className="text-button" onClick={() => openSession(null)} disabled={unavailable}>新建会话</button></div>}</section> : <>
         <div className="new-session-heading"><h1>新会话</h1><FolderPicker folders={folders} value={draft.folderId} label={folders.find((folder) => folder.id === draft.folderId)?.name ?? '未分类'} onChange={async (id) => updateDraft({ ...draft, folderId: id })} onCreate={() => setFolderDialog({ assignDraft: true })} disabled={unavailable} /></div>
-        <form className="editor-card initial-editor" onSubmit={save}><label className="sr-only" htmlFor="event-title">会话名称</label><input id="event-title" className="title-input" placeholder="会话名称" maxLength={120} value={draft.title} onChange={(event) => updateDraft({ ...draft, title: event.target.value })} disabled={unavailable} required /><MarkdownEditor id="initial-content" label="初次感受" value={draft.content} onChange={(content) => updateDraft({ ...draft, content })} disabled={unavailable} /><div className="editor-footer"><span className={draftWarning ? 'draft-warning' : ''}>{draftWarning ? '草稿暂存失败，请先保存' : `${draft.content.length} 字`}</span><button type="submit" className="primary-button" disabled={unavailable || !draft.title.trim() || !draft.content.trim()}>{busy ? '保存中…' : '保存初次记录'}<Icon name="arrow" size={16} /></button></div></form>
+        <form className="editor-card initial-editor" onSubmit={save}><label className="sr-only" htmlFor="event-title">会话名称</label><input id="event-title" className="title-input" placeholder="会话名称" maxLength={120} value={draft.title} onChange={(event) => updateDraft({ ...draft, title: event.target.value })} disabled={unavailable} required /><Suspense fallback={editorFallback}><MarkdownEditor id="initial-content" label="初次感受" value={draft.content} onChange={(content) => updateDraft({ ...draft, content })} disabled={unavailable} /></Suspense><div className="editor-footer"><span className={draftWarning ? 'draft-warning' : ''}>{draftWarning ? '草稿暂存失败，请先保存' : `${draft.content.length} 字`}</span><button type="submit" className="primary-button" disabled={unavailable || !draft.title.trim() || !draft.content.trim()}>{busy ? '保存中…' : '保存初次记录'}<Icon name="arrow" size={16} /></button></div></form>
       </>}
       </div>
     </div></div></main>
@@ -277,7 +298,4 @@ function FolderDialog({ folder, actionLabel, busy, onSave, onCancel }: { folder?
   useEffect(() => { const element = dialog.current!; element.showModal(); input.current?.select(); return () => { element.close(); if (opener.current?.isConnected) opener.current.focus(); }; }, []);
   async function submit(event: FormEvent) { event.preventDefault(); if (busy || !name.trim()) return; setError(''); try { await onSave(name); } catch (reason) { setError(errorMessage(reason)); } }
   return <dialog ref={dialog} className="app-dialog" aria-labelledby="folder-dialog-title" onCancel={(event) => { if (busy) event.preventDefault(); else onCancel(); }}><form onSubmit={submit}><h2 id="folder-dialog-title">{folder ? '重命名文件夹' : '新建文件夹'}</h2><label className="sr-only" htmlFor="folder-name">文件夹名称</label><input ref={input} autoFocus id="folder-name" name="folder-name" autoComplete="off" className="dialog-input" placeholder="文件夹名称…" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} disabled={busy} required />{error && <p className="dialog-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="cancel-button" onClick={onCancel} disabled={busy}>取消</button><button type="submit" className="primary-button" disabled={busy || !name.trim()}>{busy ? '保存中…' : folder ? '保存名称' : actionLabel ?? '创建'}</button></div></form></dialog>;
-}
-function Timeline({ session }: { session: Session }) {
-  return <div className="timeline">{session.entries.map((entry, index) => <article className="timeline-entry" key={entry.id}><div className="timeline-marker">{index === 0 ? <span /> : index}</div><div className="timeline-entry-heading"><h3>{index === 0 ? '初次记录' : `第 ${index} 次回忆`}</h3><time dateTime={entry.createdAt}>{timeFormat.format(new Date(entry.createdAt))}</time></div><MarkdownContent content={entry.content} /></article>)}</div>;
 }

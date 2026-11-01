@@ -35,7 +35,10 @@ export default function FolderPicker({ folders, value, onChange, disabled = fals
     if (id === value) { setOpen(false); return; }
     pendingRef.current = true; setPending(true); setError('');
     try { await onChange(id); setOpen(false); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : '移动未完成，请重试。'); }
+    catch (reason) {
+      setError(reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : '移动未完成，请重试。');
+      window.requestAnimationFrame(() => content.current?.querySelectorAll<HTMLButtonElement>('.interaction-folder-option')[options.findIndex((folder) => folder.id === id)]?.focus());
+    }
     finally { pendingRef.current = false; setPending(false); }
   }
   function optionNavigation(event: KeyboardEvent<HTMLDivElement>) {

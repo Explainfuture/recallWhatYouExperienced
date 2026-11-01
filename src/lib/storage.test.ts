@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { appendRecall, createFolder, createSession, deleteFolder, deleteSession, exportBackup, importBackup, isDue, listFolders, listSessions, moveSession, nextReviewDate, renameFolder } from './storage';
+import { appendRecall, createFolder, createSession, deleteFolder, deleteSession, exportBackup, importBackup, isDue, listFolders, listSessions, moveSession, nextReviewDate, renameEntry, renameFolder, renameSession } from './storage';
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -315,6 +315,168 @@ describe('folder backups', () => {
     backup.sessions[0].entries[0].content = '冲突内容';
     await expect(importBackup(JSON.stringify(backup))).rejects.toThrow('冲突');
     expect(await listFolders()).toEqual([]);
+    expect(await listSessions()).toEqual([session]);
+  });
+});
+
+describe('session and entry titles', () => {
+  it('renames the session and individual records without changing Markdown, chronology or review dates', async () => {
+    const initial = await createSession('原会话', '# 初次感受\n\n- **重要**\n- [参考](https://example.com)');
+    vi.setSystemTime(new Date(2026, 10, 3, 9));
+    const recalled = await appendRecall(initial.id, '```ts\nconst value = 1;\n```\n\n新的回忆');
+    vi.setSystemTime(new Date(2026, 10, 5, 12));
+    const renamedSession = await renameSession(initial.id, '  会话新名称  ');
+    expect(renamedSession).toEqual({ ...recalled, title: '会话新名称', titleUpdatedAt: new Date().toISOString() });
+    await renameEntry(initial.id, initial.entries[0].id, '  初次观察  ');
+    const renamed = await renameEntry(initial.id, recalled.entries[1].id, '一周后的理解');
+    expect(renamed.entries.map((entry) => entry.title)).toEqual(['初次观察', '一周后的理解']);
+    expect(renamed.entries.map(({ id, content, createdAt }) => ({ id, content, createdAt })))
+      .toEqual(recalled.entries);
+    expect(renamed.updatedAt).toBe(recalled.updatedAt);
+    expect(renamed.createdAt).toBe(recalled.createdAt);
+    expect(renamed.nextReviewAt).toBe(recalled.nextReviewAt);
+    expect(await listSessions()).toEqual([renamed]);
+  });
+
+  it('rejects blank names and missing sessions or records without changing stored data', async () => {
+    const session = await createSession('原名称', '内容');
+    await expect(renameSession(session.id, '  ')).rejects.toThrow('会话名称');
+    await expect(renameEntry(session.id, session.entries[0].id, '\n')).rejects.toThrow('记录标题');
+    await expect(renameSession('missing', '新名称')).rejects.toThrow('已被删除');
+    await expect(renameEntry('missing', session.entries[0].id, '新标题')).rejects.toThrow('已被删除');
+    await expect(renameEntry(session.id, 'missing-entry', '新标题')).rejects.toThrow('已不存在');
+    expect(await listSessions()).toEqual([session]);
+  });
+
+  it('keeps concurrent title changes, recollections and folder moves', async () => {
+    const folder = await createFolder('学习');
+    const session = await createSession('原名称', '原内容');
+    vi.setSystemTime(new Date(2026, 10, 3, 9));
+    await Promise.all([
+      renameSession(session.id, '新名称'),
+      renameEntry(session.id, session.entries[0].id, '初次理解'),
+      appendRecall(session.id, '新的回忆'),
+      moveSession(session.id, folder.id),
+    ]);
+    const [saved] = await listSessions();
+    expect(saved.title).toBe('新名称');
+    expect(saved.entries[0]).toMatchObject({ ...session.entries[0], title: '初次理解' });
+    expect(saved.entries.map((entry) => entry.content)).toEqual(['原内容', '新的回忆']);
+    expect(saved.folderId).toBe(folder.id);
+    expect(saved.nextReviewAt).toBe(nextReviewDate(new Date(), 7));
+  });
+
+  it('reports aborted title writes as failures and preserves the original record', async () => {
+    const session = await createSession('原名称', '原内容');
+    const original = IDBObjectStore.prototype.put;
+    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore, value, key) {
+      const request = original.call(this, value, key);
+      request.onsuccess = () => this.transaction.abort();
+      return request;
+    });
+    await expect(renameSession(session.id, '新名称')).rejects.toThrow('保存失败');
+    await expect(renameEntry(session.id, session.entries[0].id, '新标题')).rejects.toThrow('保存失败');
+    expect(await listSessions()).toEqual([session]);
+  });
+
+  it('roundtrips custom titles and their independent clocks through the existing v2 backup format', async () => {
+    const session = await createSession('原名称', '**Markdown 原文**');
+    await renameSession(session.id, '新名称');
+    const renamed = await renameEntry(session.id, session.entries[0].id, '记录名称');
+    const backup = await exportBackup();
+    expect(JSON.parse(backup).version).toBe(2);
+    await deleteSession(session.id);
+    await importBackup(backup);
+    expect(await listSessions()).toEqual([renamed]);
+  });
+
+  it.each([1, 2])('accepts legacy version %i backups without title metadata and allows renaming after import', async (version) => {
+    const session = await createSession('旧版本会话', '旧内容');
+    const backup = JSON.parse(await exportBackup());
+    backup.version = version;
+    delete backup.sessions[0].titleUpdatedAt;
+    if (version === 1) {
+      delete backup.folders;
+      delete backup.sessions[0].folderId;
+      delete backup.sessions[0].folderUpdatedAt;
+    }
+    await deleteSession(session.id);
+    await importBackup(JSON.stringify(backup));
+    const [legacy] = await listSessions();
+    expect(legacy.titleUpdatedAt).toBeUndefined();
+    expect(legacy.entries[0].title).toBeUndefined();
+    await renameSession(session.id, '新版名称');
+    const renamed = await renameEntry(session.id, session.entries[0].id, '新版记录标题');
+    await importBackup(JSON.stringify(backup));
+    expect(await listSessions()).toEqual([renamed]);
+  });
+
+  it('preserves newer local titles when an older title backup contains newer recollections', async () => {
+    const session = await createSession('旧名称', '原内容');
+    const backup = JSON.parse(await exportBackup());
+    vi.setSystemTime(new Date(2026, 10, 4));
+    await renameSession(session.id, '本地新名称');
+    const renamed = await renameEntry(session.id, session.entries[0].id, '本地新标题');
+    const later = new Date(2026, 10, 5).toISOString();
+    backup.sessions[0].entries.push({ id: 'imported-recall', content: '备份的新回忆', createdAt: later });
+    backup.sessions[0].updatedAt = later;
+    backup.sessions[0].nextReviewAt = nextReviewDate(later, 7);
+    await importBackup(JSON.stringify(backup));
+    const [merged] = await listSessions();
+    expect(merged.title).toBe(renamed.title);
+    expect(merged.titleUpdatedAt).toBe(renamed.titleUpdatedAt);
+    expect(merged.entries[0]).toEqual(renamed.entries[0]);
+    expect(merged.entries[1].content).toBe('备份的新回忆');
+    expect(merged.nextReviewAt).toBe(nextReviewDate(later, 7));
+  });
+
+  it('imports newer names independently of a newer local recollection schedule', async () => {
+    const session = await createSession('旧名称', '原内容');
+    const backup = JSON.parse(await exportBackup());
+    vi.setSystemTime(new Date(2026, 10, 5));
+    const recalled = await appendRecall(session.id, '本地新回忆');
+    const titleTime = new Date(2026, 10, 6).toISOString();
+    backup.sessions[0].title = '备份中的新名称';
+    backup.sessions[0].titleUpdatedAt = titleTime;
+    backup.sessions[0].entries[0].title = '备份中的新标题';
+    backup.sessions[0].entries[0].titleUpdatedAt = titleTime;
+    await importBackup(JSON.stringify(backup));
+    const [merged] = await listSessions();
+    expect(merged.title).toBe('备份中的新名称');
+    expect(merged.entries[0].title).toBe('备份中的新标题');
+    expect(merged.entries[1]).toEqual(recalled.entries[1]);
+    expect(merged.updatedAt).toBe(recalled.updatedAt);
+    expect(merged.nextReviewAt).toBe(recalled.nextReviewAt);
+  });
+
+  it('uses a monotonic title clock and keeps local names on equal backup timestamps', async () => {
+    const session = await createSession('原名称', '原内容');
+    const first = await renameSession(session.id, '第一次改名');
+    const second = await renameSession(session.id, '第二次改名');
+    expect(second.titleUpdatedAt! > first.titleUpdatedAt!).toBe(true);
+    const renamed = await renameEntry(session.id, session.entries[0].id, '本地标题');
+    const backup = JSON.parse(await exportBackup());
+    backup.sessions[0].title = '同时间其他名称';
+    backup.sessions[0].entries[0].title = '同时间其他标题';
+    await importBackup(JSON.stringify(backup));
+    expect(await listSessions()).toEqual([renamed]);
+  });
+
+  it('rejects malformed optional titles and clocks without changing local records', async () => {
+    const session = await createSession('原名称', '原内容');
+    const invalidSessionClock = JSON.parse(await exportBackup());
+    invalidSessionClock.sessions[0].titleUpdatedAt = 'invalid';
+    await expect(importBackup(JSON.stringify(invalidSessionClock))).rejects.toThrow('格式');
+    const invalidEntryTitle = JSON.parse(await exportBackup());
+    invalidEntryTitle.sessions[0].entries[0].title = '   ';
+    await expect(importBackup(JSON.stringify(invalidEntryTitle))).rejects.toThrow('格式');
+    const invalidEntryClock = JSON.parse(await exportBackup());
+    invalidEntryClock.sessions[0].entries[0].title = '标题';
+    invalidEntryClock.sessions[0].entries[0].titleUpdatedAt = new Date(2026, 0, 1).toISOString();
+    await expect(importBackup(JSON.stringify(invalidEntryClock))).rejects.toThrow('格式');
+    const orphanClock = JSON.parse(await exportBackup());
+    orphanClock.sessions[0].entries[0].titleUpdatedAt = new Date().toISOString();
+    await expect(importBackup(JSON.stringify(orphanClock))).rejects.toThrow('格式');
     expect(await listSessions()).toEqual([session]);
   });
 });

@@ -24,6 +24,7 @@
 .interaction-content[data-state="open"] { animation: interaction-appear 120ms cubic-bezier(.2,.7,.2,1); }
 .interaction-content[data-state="closed"] { animation: interaction-disappear 80ms ease-in; }
 .interaction-action-menu { width: 190px; }
+.interaction-paged-menu { width: 250px; }
 .interaction-folder-picker { width: 270px; }
 .interaction-folder-submenu { width: 250px; }
 .interaction-more-trigger, .interaction-picker-trigger { display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; background: transparent; color: var(--muted, #81796f); cursor: pointer; opacity: 1; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
@@ -45,6 +46,8 @@
 .interaction-option-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .interaction-check { display: inline-flex; justify-content: center; align-items: center; flex: 0 0 17px; width: 17px; min-height: 18px; margin-left: auto; color: #8b7155; font-size: 13px; }
 .interaction-chevron { margin-left: auto; color: var(--interaction-muted); font-size: 21px; line-height: 16px; }
+.interaction-back { color: var(--interaction-muted); }
+.interaction-back > span { font-size: 21px; line-height: 16px; }
 .interaction-separator { height: 1px; margin: 5px 4px; background: var(--interaction-line); }
 .interaction-menu-item.interaction-danger { color: #a45f56; }
 .interaction-menu-item.interaction-danger[data-highlighted] { background: #f9efeb; color: #9a4e46; }
