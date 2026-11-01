@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { appendRecall, createSession, deleteSession, exportBackup, importBackup, isDue, listSessions, nextReviewDate } from './storage';
+import { appendRecall, createFolder, createSession, deleteFolder, deleteSession, exportBackup, importBackup, isDue, listFolders, listSessions, moveSession, nextReviewDate, renameFolder } from './storage';
 
 beforeEach(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
@@ -112,7 +112,7 @@ describe('local backups', () => {
     const original = await listSessions();
     const backup = JSON.parse(await exportBackup());
     await expect(importBackup('{')).rejects.toThrow('JSON');
-    await expect(importBackup(JSON.stringify({ ...backup, version: 2 }))).rejects.toThrow('版本');
+    await expect(importBackup(JSON.stringify({ ...backup, version: 3 }))).rejects.toThrow('版本');
     backup.sessions[0].createdAt = 'not-a-date';
     await expect(importBackup(JSON.stringify(backup))).rejects.toThrow('格式');
     const duplicate = JSON.parse(await exportBackup());
@@ -127,6 +127,194 @@ describe('local backups', () => {
     backup.sessions.unshift({ ...session, id: 'new-session', entries: [{ ...session.entries[0], id: 'new-entry' }] });
     backup.sessions[1].entries[0].content = '覆盖尝试';
     await expect(importBackup(JSON.stringify(backup))).rejects.toThrow('冲突');
+    expect(await listSessions()).toEqual([session]);
+  });
+});
+
+describe('folders and database migration', () => {
+  it('upgrades a real version 1 database without changing its records or review schedule', async () => {
+    const timestamp = new Date().toISOString();
+    const legacy = {
+      id: 'legacy-session', title: '旧版本记录', createdAt: timestamp, updatedAt: timestamp,
+      entries: [{ id: 'legacy-entry', content: '升级后不能丢失的内容', createdAt: timestamp }],
+      nextReviewAt: nextReviewDate(timestamp, 1),
+    };
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open('recall-experiences', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('sessions', { keyPath: 'id' });
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction('sessions', 'readwrite');
+        transaction.objectStore('sessions').add(legacy);
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onabort = () => { database.close(); reject(transaction.error); };
+      };
+    });
+    expect(await listSessions()).toEqual([{ ...legacy, folderId: null, folderUpdatedAt: timestamp }]);
+    expect(await listFolders()).toEqual([]);
+    const folder = await createFolder('升级后的文件夹');
+    expect((await moveSession(legacy.id, folder.id)).entries).toEqual(legacy.entries);
+  });
+
+  it('creates and renames folders with trimmed names and rejects case-insensitive duplicates', async () => {
+    const folder = await createFolder('  Work  ');
+    expect(folder.name).toBe('Work');
+    await expect(createFolder(' work ')).rejects.toThrow('同名');
+    const other = await createFolder('生活');
+    await expect(renameFolder(other.id, 'WORK')).rejects.toThrow('同名');
+    await expect(createFolder('  ')).rejects.toThrow('文件夹名称');
+    await expect(renameFolder('missing', '学习')).rejects.toThrow('不存在');
+    const renamed = await renameFolder(folder.id, '  学习  ');
+    expect(renamed.name).toBe('学习');
+    expect(renamed.createdAt).toBe(folder.createdAt);
+    expect(renamed.updatedAt > folder.updatedAt).toBe(true);
+    expect((await listFolders()).map((item) => item.name).sort()).toEqual(['学习', '生活'].sort());
+  });
+
+  it('serializes concurrent duplicate folder creation', async () => {
+    const results = await Promise.allSettled([createFolder('项目'), createFolder(' 项目 ')]);
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1);
+    expect(await listFolders()).toHaveLength(1);
+  });
+
+  it('moves sessions without changing their history or recall dates and prevents orphan membership', async () => {
+    const first = await createFolder('工作');
+    const second = await createFolder('生活');
+    const session = await createSession('经历', '初次记录', first.id);
+    const recalled = await appendRecall(session.id, '新的回忆');
+    const moved = await moveSession(session.id, second.id);
+    expect(moved).toEqual({ ...recalled, folderId: second.id, folderUpdatedAt: moved.folderUpdatedAt });
+    expect(moved.folderUpdatedAt > recalled.folderUpdatedAt).toBe(true);
+    await expect(moveSession(session.id, 'missing')).rejects.toThrow('不存在');
+    await expect(createSession('不能创建', '没有文件夹', 'missing')).rejects.toThrow('不存在');
+    await expect(moveSession('missing-session', first.id)).rejects.toThrow('已被删除');
+    expect(await listSessions()).toEqual([moved]);
+    expect((await moveSession(session.id, null)).folderId).toBe(null);
+  });
+
+  it('deletes only the folder and moves every contained event to unfiled atomically', async () => {
+    const removed = await createFolder('待删除');
+    const retained = await createFolder('保留');
+    const first = await createSession('一', '记录一', removed.id);
+    const second = await createSession('二', '记录二', removed.id);
+    const third = await createSession('三', '记录三', retained.id);
+    const firstRecalled = await appendRecall(first.id, '回忆');
+    await deleteFolder(removed.id);
+    const sessions = await listSessions();
+    expect(await listFolders()).toEqual([retained]);
+    expect(sessions).toHaveLength(3);
+    for (const previous of [firstRecalled, second]) {
+      const current = sessions.find((session) => session.id === previous.id)!;
+      expect(current).toEqual({ ...previous, folderId: null, folderUpdatedAt: current.folderUpdatedAt });
+      expect(current.folderUpdatedAt > previous.folderUpdatedAt).toBe(true);
+    }
+    expect(sessions.find((session) => session.id === third.id)).toEqual(third);
+  });
+
+  it('rolls back moved sessions when deleting their folder fails to commit', async () => {
+    const folder = await createFolder('保留');
+    const session = await createSession('经历', '内容', folder.id);
+    const original = IDBObjectStore.prototype.delete;
+    vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (this: IDBObjectStore, key) {
+      const request = original.call(this, key);
+      if (this.name === 'folders') request.onsuccess = () => this.transaction.abort();
+      return request;
+    });
+    await expect(deleteFolder(folder.id)).rejects.toThrow('保存失败');
+    expect(await listFolders()).toEqual([folder]);
+    expect(await listSessions()).toEqual([session]);
+  });
+});
+
+describe('folder backups', () => {
+  it('roundtrips version 2 folders and their event membership', async () => {
+    const folder = await createFolder('学习');
+    const session = await createSession('经历', '内容', folder.id);
+    const backup = await exportBackup();
+    expect(JSON.parse(backup).version).toBe(2);
+    await deleteSession(session.id);
+    await deleteFolder(folder.id);
+    await importBackup(backup);
+    expect(await listFolders()).toEqual([folder]);
+    expect(await listSessions()).toEqual([session]);
+  });
+
+  it('imports a version 1 backup as unfiled while preserving a newer local folder assignment', async () => {
+    const session = await createSession('经历', '最初');
+    const backup = JSON.parse(await exportBackup());
+    backup.version = 1;
+    delete backup.folders;
+    delete backup.sessions[0].folderId;
+    delete backup.sessions[0].folderUpdatedAt;
+    await deleteSession(session.id);
+    await importBackup(JSON.stringify(backup));
+    expect((await listSessions())[0].folderId).toBe(null);
+    const folder = await createFolder('学习');
+    const moved = await moveSession(session.id, folder.id);
+    const later = new Date(2026, 10, 10).toISOString();
+    backup.sessions[0].entries.push({ id: 'later-legacy-recall', content: '旧版应用里的新回忆', createdAt: later });
+    backup.sessions[0].updatedAt = later;
+    backup.sessions[0].nextReviewAt = nextReviewDate(later, 7);
+    await importBackup(JSON.stringify(backup));
+    const [merged] = await listSessions();
+    expect(merged.folderId).toBe(folder.id);
+    expect(merged.folderUpdatedAt).toBe(moved.folderUpdatedAt);
+    expect(merged.entries).toHaveLength(2);
+    expect(merged.nextReviewAt).toBe(nextReviewDate(later, 7));
+  });
+
+  it('keeps newer local folder moves and renames when importing an older version 2 backup', async () => {
+    const first = await createFolder('旧名称');
+    const second = await createFolder('另一个文件夹');
+    const session = await createSession('经历', '内容', first.id);
+    const oldBackup = await exportBackup();
+    const renamed = await renameFolder(first.id, '新名称');
+    const moved = await moveSession(session.id, second.id);
+    await importBackup(oldBackup);
+    expect((await listFolders()).find((folder) => folder.id === first.id)).toEqual(renamed);
+    expect(await listSessions()).toEqual([moved]);
+  });
+
+  it('merges a newer folder move independently from a newer local recollection schedule', async () => {
+    const folder = await createFolder('学习');
+    const session = await createSession('经历', '内容');
+    const backup = JSON.parse(await exportBackup());
+    backup.sessions[0].folderId = folder.id;
+    backup.sessions[0].folderUpdatedAt = new Date(2026, 10, 4).toISOString();
+    vi.setSystemTime(new Date(2026, 10, 5));
+    const recalled = await appendRecall(session.id, '本地的新回忆');
+    await importBackup(JSON.stringify(backup));
+    const [merged] = await listSessions();
+    expect(merged.folderId).toBe(folder.id);
+    expect(merged.entries).toEqual(recalled.entries);
+    expect(merged.nextReviewAt).toBe(recalled.nextReviewAt);
+  });
+
+  it('rejects orphan folder IDs and collisions with local folder names without modifying either store', async () => {
+    const folder = await createFolder('Work');
+    const session = await createSession('经历', '内容', folder.id);
+    const orphan = JSON.parse(await exportBackup());
+    orphan.sessions[0].folderId = 'missing';
+    await expect(importBackup(JSON.stringify(orphan))).rejects.toThrow('格式');
+    const duplicate = JSON.parse(await exportBackup());
+    duplicate.folders[0].id = 'other-folder';
+    duplicate.folders[0].name = ' work ';
+    duplicate.sessions[0].folderId = 'other-folder';
+    await expect(importBackup(JSON.stringify(duplicate))).rejects.toThrow('同名');
+    expect(await listFolders()).toEqual([folder]);
+    expect(await listSessions()).toEqual([session]);
+  });
+
+  it('rolls back imported folders when an immutable entry conflicts later in the same import', async () => {
+    const session = await createSession('经历', '原内容');
+    const backup = JSON.parse(await exportBackup());
+    const timestamp = new Date().toISOString();
+    backup.folders.push({ id: 'new-folder', name: '新文件夹', createdAt: timestamp, updatedAt: timestamp });
+    backup.sessions[0].entries[0].content = '冲突内容';
+    await expect(importBackup(JSON.stringify(backup))).rejects.toThrow('冲突');
+    expect(await listFolders()).toEqual([]);
     expect(await listSessions()).toEqual([session]);
   });
 });

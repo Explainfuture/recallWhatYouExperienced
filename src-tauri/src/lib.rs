@@ -1,4 +1,5 @@
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 /// The frontend supplies content only. A native dialog is the only way to
 /// select a destination, so this command never accepts an arbitrary path.
@@ -27,11 +28,34 @@ async fn save_backup(app: tauri::AppHandle, content: String) -> Result<bool, Str
     .map_err(|error| format!("无法打开保存对话框：{error}"))?
 }
 
+/// Markdown links may open web pages or email composers, never local files
+/// or executable/custom URL schemes. The frontend cannot select an opener.
+#[tauri::command]
+async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|_| "链接地址无效".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https" | "mailto") {
+        return Err("仅支持网页和邮件链接".to_string());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        app.opener()
+            .open_url(parsed.as_str(), None::<&str>)
+            .map_err(|error| format!("无法打开链接：{error}"))
+    })
+    .await
+    .map_err(|error| format!("无法打开链接：{error}"))?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![save_backup])
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
+        .invoke_handler(tauri::generate_handler![save_backup, open_external_url])
         .run(tauri::generate_context!())
         .expect("failed to start Recall");
 }
