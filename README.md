@@ -2,6 +2,10 @@
 
 一个轻量的本地回忆笔记本：经历一件事，写下当时的感受，过一段时间再写一次。
 
+[下载 Windows 版本](https://github.com/Explainfuture/recallWhatYouExperienced/releases/latest) · [查看构建状态](https://github.com/Explainfuture/recallWhatYouExperienced/actions)
+
+![回响界面，内容为演示记录](docs/recall-preview.png)
+
 ## 使用
 
 1. 新建事件，填写事件名称和初次记录，点击保存。
@@ -13,6 +17,7 @@
 ## 数据
 
 - 事件和回忆保存在当前设备的 IndexedDB 中，不需要账号、服务器或联网同步。
+- 写到一半的内容会暂存在本机 localStorage，重开或切换事件后可继续写；点击保存后才成为正式记录。备份只包含正式保存的记录。
 - 可以导出 JSON 备份，并在另一份应用中导入。导入按事件和记录编号合并，不清空已有数据；发现冲突时取消整个导入。
 - 浏览器预览、开发版和安装版可能使用不同的存储空间，迁移时请导出再导入。
 - 清除浏览器或应用数据会影响本地记录，请按需保留备份。公开仓库只包含程序源代码，不包含你的笔记。
