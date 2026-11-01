@@ -15,7 +15,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 1px soli
 input:focus, textarea:focus, select:focus { outline: none; }
 button svg { flex-shrink: 0; }
 .app-shell { display: flex; height: 100dvh; min-height: 540px; }
-.sidebar { display: flex; flex-direction: column; flex: 0 0 280px; min-width: 0; background: #f0f3f8; border-right: 1px solid #e3e8f0; padding: 27px 20px 20px; }
+.sidebar { display: flex; flex-direction: column; flex: 0 0 280px; min-width: 0; overflow-y: auto; background: #f0f3f8; border-right: 1px solid #e3e8f0; padding: 27px 20px 20px; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 5px; margin-bottom: 28px; }
 .brand strong { font-size: 21px; letter-spacing: 2px; font-weight: 650; }
 .new-button { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; border: 0; padding: 12px; background: var(--blue); border-radius: 7px; color: white; font-size: 14px; }
@@ -116,6 +116,15 @@ h1 { font-weight: 600; font-size: 28px; line-height: 1.5; margin: 0; overflow-wr
 @media (min-width: 1500px) { .writing-area { padding-top: 70px; } }
 @media (max-width: 1050px) { .sidebar { flex-basis: 250px; padding: 24px 16px 20px; } .writing-area { padding: 40px 32px; } .toast { left: calc(50% + 125px); } }
 @media (max-width: 780px) { .sidebar { flex-basis: 225px; padding: 23px 13px 18px; } .writing-area { padding: 32px 24px; } h1 { font-size: 25px; } .new-session-heading { align-items: flex-start; flex-direction: column; gap: 12px; } .folder-select { max-width: 185px; } .toast { left: calc(50% + 112px); } }
+@media (min-width: 581px) and (max-height: 700px) {
+  .sidebar { padding-top: 18px; padding-bottom: 16px; }
+  .brand { margin-bottom: 18px; }
+  .folder-heading { margin-top: 14px; margin-bottom: 4px; }
+  .folder-list { max-height: 120px; }
+  .session-tools { margin-top: 12px; padding-top: 12px; }
+  .session-list { min-height: 60px; }
+  .sidebar-footer { margin-top: 10px; padding-top: 12px; }
+}
 @media (max-width: 580px) {
   .app-shell { height: auto; min-height: 100dvh; flex-direction: column; }
   .sidebar { flex-basis: auto; width: 100%; padding: 20px; border-right: 0; border-bottom: 1px solid var(--line); }
