@@ -50,7 +50,7 @@ jobs:
           workspaces: src-tauri -> target
       - run: npm ci
       - run: npm run build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --release --lib
       - run: npm run tauri -- build --bundles nsis
       - uses: actions/upload-artifact@v4
         with:

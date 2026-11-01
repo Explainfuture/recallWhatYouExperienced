@@ -62,7 +62,7 @@ pub fn run() {
         // Plugin setup runs before configured windows are created. Register
         // state here so even the first page's readiness IPC can find it.
         .plugin(
-            tauri::plugin::Builder::new("recall-mcp")
+            tauri::plugin::Builder::<_, ()>::new("recall-mcp")
                 .setup(|app, _| {
                     app.manage(mcp_bridge::start(app));
                     Ok(())

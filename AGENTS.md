@@ -86,7 +86,7 @@ Agent 客户端以 stdio 启动 Node MCP。MCP 按固定本机描述文件连接
 npm ci
 npm test
 npm run build
-cargo test --manifest-path src-tauri/Cargo.toml --lib
+cargo test --manifest-path src-tauri/Cargo.toml --release --lib
 npm run tauri -- build --bundles nsis
 ```
 
