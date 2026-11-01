@@ -24,7 +24,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 button { transition: background-color .15s ease, color .15s ease; }
 button svg { flex-shrink: 0; }
 .app-shell { display: flex; height: 100dvh; min-height: 540px; }
-.sidebar { display: flex; flex-direction: column; flex: 0 0 294px; background: #f0f3f8; border-right: 1px solid #e3e8f0; padding: 30px 22px 22px; }
+.sidebar { display: flex; flex-direction: column; flex: 0 0 294px; min-width: 0; background: #f0f3f8; border-right: 1px solid #e3e8f0; padding: 30px 22px 22px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 4px; margin-bottom: 37px; }
 .brand strong { display: block; font-size: 21px; letter-spacing: 3px; line-height: 1.35; font-weight: 650; }
 .brand div > span { display: block; color: var(--muted); font-size: 9px; letter-spacing: 3px; margin-top: 1px; }

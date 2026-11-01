@@ -135,7 +135,9 @@ export default function App() {
       } else {
         const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
         const anchor = document.createElement('a'); anchor.href = url;
-        anchor.download = `recall-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const today = new Date();
+        const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        anchor.download = `recall-backup-${localDate}.json`;
         anchor.click(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
         setNotice('备份文件已生成。');
       }
