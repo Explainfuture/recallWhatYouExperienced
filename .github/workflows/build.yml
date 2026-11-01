@@ -54,6 +54,14 @@ jobs:
       - run: npm run tauri -- build --bundles nsis
       - uses: actions/upload-artifact@v4
         with:
+          name: Recall-Windows-runtime
+          path: |
+            src-tauri/target/release/recall.exe
+            src-tauri/target/release/mcp/
+          if-no-files-found: error
+          retention-days: 3
+      - uses: actions/upload-artifact@v4
+        with:
           name: Recall-Windows-x64
           path: src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
