@@ -28,7 +28,7 @@ function readDraft(id: string): Draft {
   } catch { /* A broken draft never prevents opening saved records. */ }
   return { title: '', content: '' };
 }
-function errorMessage(error: unknown) { return error instanceof Error ? error.message : '操作没有完成，请重试。'; }
+function errorMessage(error: unknown) { return error instanceof Error ? error.message : typeof error === 'string' ? error : '操作没有完成，请重试。'; }
 function reviewLabel(session: Session, now: Date) {
   if (!session.nextReviewAt) return '随时可以回忆';
   if (isDue(session, now)) return '今天回忆';
@@ -51,6 +51,7 @@ export default function App() {
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState<Draft>(() => readDraft('new'));
   const [draftWarning, setDraftWarning] = useState(false);
+  const [confirmation, setConfirmation] = useState<{ kind: 'delete' } | { kind: 'navigate'; id: string | null } | null>(null);
   const [now, setNow] = useState(() => new Date());
   const fileInput = useRef<HTMLInputElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -88,10 +89,10 @@ export default function App() {
     catch { setDraftWarning(true); }
   }
 
-  function openSession(id: string | null) {
+  function openSession(id: string | null, discardUnsaved = false) {
     if (busyRef.current) return;
     const nextDraft = readDraft(id ?? 'new');
-    if (draftWarning && (draft.title || draft.content) && !window.confirm('草稿未能暂存，离开会丢失当前输入。仍要离开吗？')) return;
+    if (!discardUnsaved && draftWarning && (draft.title || draft.content)) { setConfirmation({ kind: 'navigate', id }); return; }
     setSelectedId(id); setDraft(nextDraft); setComposing(Boolean(id && nextDraft.content));
     setError(''); setDraftWarning(false);
   }
@@ -111,7 +112,7 @@ export default function App() {
   }
 
   async function removeSession() {
-    if (!selected || busyRef.current || !window.confirm(`删除「${selected.title}」及其全部 ${selected.entries.length} 次记录？此操作无法撤销。`)) return;
+    if (!selected || busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
       await deleteSession(selected.id);
@@ -147,7 +148,6 @@ export default function App() {
     if (!file || busyRef.current) return;
     busyRef.current = true; setBusy(true); setError('');
     try {
-      if (file.size > 20 * 1024 * 1024) throw new Error('备份文件超过 20 MB，请选择较小的备份。');
       const count = await importBackup(await file.text());
       setSessions(await listSessions()); setNotice(`已合并 ${count} 个事件，本机已有的记录会保留。`);
     } catch (reason) { setError(errorMessage(reason)); }
@@ -185,14 +185,14 @@ export default function App() {
         {notice && <div className="toast" role="status"><Icon name="check" size={16} />{notice}</div>}
         {selected ? <>
           <div className="eyebrow">一件经历，多一次理解</div>
-          <div className="event-heading"><h1>{selected.title}</h1><button className="icon-button delete-button" aria-label="删除事件" title="删除事件" onClick={removeSession} disabled={busy}><Icon name="trash" size={17} /></button></div>
+          <div className="event-heading"><h1>{selected.title}</h1><button className="icon-button delete-button" aria-label="删除事件" title="删除事件" onClick={() => setConfirmation({ kind: 'delete' })} disabled={busy}><Icon name="trash" size={17} /></button></div>
           <p className="event-subtitle">始于 {dateFormat.format(new Date(selected.createdAt))}<span>·</span>{selected.entries.length - 1} 次回忆<span>·</span><span className={isDue(selected, now) ? 'due-text' : ''}>{reviewLabel(selected, now)}</span></p>
           <div className="journey" aria-label="回忆过程"><div className="journey-step complete"><span><Icon name="check" size={13} /></span><div>初次记录<small>把经历留下来</small></div></div><div className="journey-line" /><div className={`journey-step ${selected.entries.length > 1 ? 'complete' : 'current'}`}><span>{selected.entries.length > 1 ? <Icon name="check" size={13} /> : '2'}</span><div>隔天想起<small>试着重新说一遍</small></div></div><div className="journey-line" /><div className={`journey-step ${selected.entries.length > 1 ? 'current' : ''}`}><span>↻</span><div>每周回溯<small>看见新的理解</small></div></div></div>
           {!composing && <button className="recall-prompt" onClick={() => { setComposing(true); window.setTimeout(() => editor.current?.focus(), 0); }} disabled={busy}><span className="recall-prompt-icon"><Icon name="plus" size={22} /></span><span><strong>下一次回忆</strong><small>此刻再想起这件事，你还记得什么？</small></span><Icon name="arrow" size={21} /></button>}
           {composing && <form className="editor-card recall-editor" onSubmit={save}>
             <div className="editor-heading"><span className="entry-tag">第 {selected.entries.length} 次回忆</span><button type="button" className="text-button" onClick={() => setComposing(false)} disabled={busy}>收起草稿</button></div>
             <label className="sr-only" htmlFor="recall-content">这次回忆</label>
-            <textarea ref={editor} id="recall-content" placeholder="先不看过去的记录，试着用自己的话写下来。\n你还记得什么？现在有什么不同的理解？" value={draft.content} onChange={(event) => updateDraft({ ...draft, content: event.target.value })} disabled={busy} required />
+            <textarea ref={editor} id="recall-content" placeholder={'先不看过去的记录，试着用自己的话写下来。\n你还记得什么？现在有什么不同的理解？'} value={draft.content} onChange={(event) => updateDraft({ ...draft, content: event.target.value })} disabled={busy} required />
             <div className="editor-footer"><span>{draftWarning ? '草稿暂存失败，请先保存' : `${draft.content.length} 字 · 草稿暂存于本机`}</span><button type="submit" className="primary-button" disabled={busy || !draft.content.trim()}>{busy ? '保存中…' : '保存这次回忆'}<Icon name="arrow" size={16} /></button></div>
           </form>}
           <section className="history" aria-label="历次记录"><div className="section-title"><h2>留下的思考</h2><span>{selected.entries.length} 次记录</span></div>
@@ -207,7 +207,7 @@ export default function App() {
             <label className="sr-only" htmlFor="event-title">事件名称</label>
             <input id="event-title" className="title-input" placeholder="给这件事起个名字" maxLength={120} value={draft.title} onChange={(event) => updateDraft({ ...draft, title: event.target.value })} disabled={busy || loading || loadError} required />
             <label className="sr-only" htmlFor="initial-content">初次感受</label>
-            <textarea id="initial-content" placeholder="发生了什么？你有什么感受或理解？\n\n就像讲给自己听一样，写在这里。" value={draft.content} onChange={(event) => updateDraft({ ...draft, content: event.target.value })} disabled={busy || loading || loadError} required />
+            <textarea id="initial-content" placeholder={'发生了什么？你有什么感受或理解？\n\n就像讲给自己听一样，写在这里。'} value={draft.content} onChange={(event) => updateDraft({ ...draft, content: event.target.value })} disabled={busy || loading || loadError} required />
             <div className="editor-footer"><span>{draftWarning ? '草稿暂存失败，请先保存' : draft.content || draft.title ? `${draft.content.length} 字 · 草稿暂存于本机` : '只有你自己看得到'}</span><button type="submit" className="primary-button" disabled={busy || loading || loadError || !draft.title.trim() || !draft.content.trim()}>{busy ? '保存中…' : '保存初次记录'}<Icon name="arrow" size={16} /></button></div>
           </form>
           <div className="method-note"><Icon name="clock" size={18} /><div><strong>写下，是回忆的起点。</strong><p>明天回想一次，之后每隔一周再回溯。<br className="mobile-break" /> 每一次，都保留当时的思考。</p></div></div>
@@ -215,7 +215,23 @@ export default function App() {
         <footer className="page-footer"><span>经历过，再想起。</span><span>{sessions.length} 件经历<span className="footer-dot">·</span>{totalRecalls} 次回忆</span></footer>
       </div></div>
     </main>
+    {confirmation && <ConfirmDialog
+      title={confirmation.kind === 'delete' ? '删除这个事件？' : '离开当前草稿？'}
+      message={confirmation.kind === 'delete' ? `「${selected?.title}」及其全部 ${selected?.entries.length} 次记录将被删除，此操作无法撤销。` : '草稿未能暂存，离开会丢失当前输入。你可以取消并先保存。'}
+      confirmLabel={confirmation.kind === 'delete' ? '确认删除' : '仍然离开'}
+      onCancel={() => setConfirmation(null)}
+      onConfirm={() => { setConfirmation(null); if (confirmation.kind === 'delete') void removeSession(); else openSession(confirmation.id, true); }}
+    />}
   </div>;
+}
+
+function ConfirmDialog({ title, message, confirmLabel, onCancel, onConfirm }: { title: string; message: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => { const element = dialog.current!; element.showModal(); return () => element.close(); }, []);
+  return <dialog ref={dialog} className="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message" onCancel={onCancel}>
+    <h2 id="confirm-title">{title}</h2><p id="confirm-message">{message}</p>
+    <div><button autoFocus className="cancel-button" onClick={onCancel}>取消</button><button className="danger-button" onClick={onConfirm}>{confirmLabel}</button></div>
+  </dialog>;
 }
 
 function Timeline({ session }: { session: Session }) {
