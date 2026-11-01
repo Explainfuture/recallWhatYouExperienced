@@ -5,6 +5,7 @@ import FolderActions from './components/FolderActions';
 import SessionActions from './components/SessionActions';
 import EditableTitle from './components/EditableTitle';
 import RecallHistory from './components/RecallHistory';
+import McpConnectionDialog from './components/McpConnectionDialog';
 
 const MarkdownEditor = lazy(() => import('./components/MarkdownEditor'));
 const editorFallback = <div className="editor-loading" role="status">正在准备编辑器…</div>;
@@ -69,6 +70,7 @@ export default function App() {
   const [draftWarning, setDraftWarning] = useState(false);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [folderDialog, setFolderDialog] = useState<{ folder?: Folder; createdFolder?: Folder; moveSessionId?: string; assignDraft?: boolean } | null>(null);
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const fileInput = useRef<HTMLInputElement>(null);
   const selected = sessions.find((session) => session.id === selectedId);
@@ -260,7 +262,7 @@ export default function App() {
           <span className="session-title">{session.title}</span><span className="session-meta"><span>{dateFormat.format(new Date(session.createdAt))}</span><span className={isDue(session, now) ? 'due-text' : ''}>{isDue(session, now) ? '待回忆' : `${session.entries.length - 1} 次回忆`}</span></span>
         </button><SessionActions title={session.title} folders={folders} folderId={session.folderId} onMove={(id) => changeFolder(session.id, id)} onCreateFolder={() => setFolderDialog({ moveSessionId: session.id })} disabled={unavailable} /></div>) : <div className="list-empty">{query ? '没有找到会话' : filter === 'due' ? '暂无待回忆' : '暂无会话'}</div>}
       </div>
-      <div className="sidebar-footer"><div className="backup-actions"><button onClick={downloadBackup} disabled={unavailable}><Icon name="download" size={15} />导出备份</button><button onClick={() => fileInput.current?.click()} disabled={unavailable}><Icon name="upload" size={15} />导入备份</button></div><input ref={fileInput} hidden type="file" accept=".json,application/json" onChange={restoreBackup} /></div>
+      <div className="sidebar-footer"><div className="backup-actions"><button onClick={downloadBackup} disabled={unavailable}><Icon name="download" size={15} />导出备份</button><button onClick={() => fileInput.current?.click()} disabled={unavailable}><Icon name="upload" size={15} />导入备份</button></div><button type="button" className="mcp-connect-button" onClick={() => setMcpDialogOpen(true)}><svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="m10 14 4-4M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0m2 1 1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0" /></svg>连接 Agent</button><input ref={fileInput} hidden type="file" accept=".json,application/json" onChange={restoreBackup} /></div>
     </aside>
     <main className="main-panel" id="main-content"><div className="main-scroll"><div className="writing-area">
       {error && <div className="error-message" role="alert"><span>{error}</span>{loadError ? <button onClick={() => window.location.reload()}>重试</button> : <button aria-label="关闭错误提示" onClick={() => setError('')}><Icon name="close" size={16} /></button>}</div>}
@@ -281,6 +283,7 @@ export default function App() {
     </div></div></main>
     {confirmation && <ConfirmDialog title={confirmation.kind === 'delete' ? '删除会话？' : confirmation.kind === 'folder' ? '删除文件夹？' : '离开草稿？'} message={confirmation.kind === 'delete' ? `「${selected?.title}」及其全部记录将被删除，无法撤销。` : confirmation.kind === 'folder' ? `「${confirmation.folder.name}」中的会话将移至未分类，记录会保留。` : '草稿未能暂存，离开会丢失当前输入。'} confirmLabel={confirmation.kind === 'navigate' ? '仍然离开' : '确认删除'} onCancel={() => setConfirmation(null)} onConfirm={() => { setConfirmation(null); if (confirmation.kind === 'delete') void removeSession(); else if (confirmation.kind === 'folder') void removeFolder(confirmation.folder); else openSession(confirmation.id, true, confirmation.folderFilter, confirmation.view); }} />}
     {folderDialog && <FolderDialog folder={folderDialog.folder} actionLabel={folderDialog.moveSessionId ? '创建并移动' : undefined} busy={busy} onSave={saveFolder} onCancel={() => setFolderDialog(null)} />}
+    {mcpDialogOpen && <McpConnectionDialog onClose={() => setMcpDialogOpen(false)} />}
   </div>;
 }
 function ConfirmDialog({ title, message, confirmLabel, onCancel, onConfirm }: { title: string; message: string; confirmLabel: string; onCancel: () => void; onConfirm: () => void }) {

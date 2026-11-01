@@ -25,6 +25,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Check bundled MCP over stdio
+        run: npx vitest run mcp/server.test.ts
+        env:
+          RECALL_MCP_TEST_SERVER: dist-mcp/server.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Recall-MCP
+          path: dist-mcp/
+          if-no-files-found: error
 
   windows:
     needs: check
@@ -40,6 +49,8 @@ jobs:
         with:
           workspaces: src-tauri -> target
       - run: npm ci
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - run: npm run tauri -- build --bundles nsis
       - uses: actions/upload-artifact@v4
         with:

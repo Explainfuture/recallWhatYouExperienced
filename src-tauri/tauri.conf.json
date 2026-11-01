@@ -1,10 +1,10 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Recall",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "identifier": "com.explainfuture.recall",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run build:mcp && npm run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
@@ -31,6 +31,10 @@
     "targets": ["nsis"],
     "shortDescription": "记录经历，再次回忆。",
     "category": "Productivity",
+    "resources": {
+      "../dist-mcp/server.mjs": "mcp/server.mjs",
+      "../AGENTS.md": "mcp/AGENTS.md"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

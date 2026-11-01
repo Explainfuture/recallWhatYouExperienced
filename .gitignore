@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-mcp/
 src-tauri/target/
 output/
 .playwright-cli/
@@ -11,3 +12,4 @@ output/
 .DS_Store
 Thumbs.db
 backups/
+bridge.json

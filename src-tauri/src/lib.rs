@@ -1,3 +1,7 @@
+mod mcp_bridge;
+
+use std::sync::Arc;
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -55,7 +59,46 @@ pub fn run() {
                 .open_js_links_on_click(false)
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![save_backup, open_external_url])
-        .run(tauri::generate_context!())
-        .expect("failed to start Recall");
+        // Plugin setup runs before configured windows are created. Register
+        // state here so even the first page's readiness IPC can find it.
+        .plugin(
+            tauri::plugin::Builder::new("recall-mcp")
+                .setup(|app, _| {
+                    app.manage(mcp_bridge::start(app));
+                    Ok(())
+                })
+                .build(),
+        )
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Started
+            {
+                if let Some(bridge) = webview.try_state::<Arc<mcp_bridge::Bridge>>() {
+                    bridge.set_ready(false);
+                }
+            }
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(bridge) = window.try_state::<Arc<mcp_bridge::Bridge>>() {
+                    bridge.close();
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            save_backup,
+            open_external_url,
+            mcp_bridge::mcp_bridge_ready,
+            mcp_bridge::mcp_snapshot_response,
+            mcp_bridge::mcp_connection_info,
+        ])
+        .build(tauri::generate_context!())
+        .expect("failed to start Recall")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(bridge) = app.try_state::<Arc<mcp_bridge::Bridge>>() {
+                    bridge.close();
+                }
+            }
+        });
 }

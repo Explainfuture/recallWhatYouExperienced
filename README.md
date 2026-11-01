@@ -4,6 +4,8 @@
 
 [下载 Windows 版本](https://github.com/Explainfuture/recallWhatYouExperienced/releases/latest) · [查看构建状态](https://github.com/Explainfuture/recallWhatYouExperienced/actions)
 
+[连接 Agent / MCP](docs/mcp.md) · [Agent 使用与开发约定](AGENTS.md)
+
 ![回响界面，内容为演示记录](docs/recall-preview.png)
 
 ## 使用
@@ -23,6 +25,12 @@
 可以创建文件夹整理事件。点击文件夹旁的 `…`，选择“重命名”修改名称。移动事件时，点击事件旁的 `…` →“移动到…”，或打开事件后点击“移动到…”按钮，再选择目标文件夹。选择器支持搜索文件夹；在其中新建文件夹会同时把当前事件移入新文件夹。删除文件夹会把其中的事件移到“未分类”，保留记录。
 
 首次保存后，次日开始显示待回忆提示；每次回忆后，下一次提示安排在七天后。日期按设备所在时区的自然日计算，从当天零点起到期。你也可以随时提前回忆。提示只显示在应用内，不发送系统通知。
+
+## 让 Agent 比较回忆
+
+桌面版左下角点击“连接 Agent”，即可复制 Codex 或通用 MCP 配置。连接需要 Node.js 22+，并保持回响打开。安装包已自带 MCP 服务，无需克隆源码。
+
+四个只读工具可以检查连接、列出分类、列出会话、读取一个会话的初次记录与全部回忆。记录保留次数、日期、自定义标题和完整 Markdown，让 Agent 依据原文比较理解的变化。应用不会自动分析或推送建议；你可以在 Agent 中发起一次比较。接入说明与接口见 [MCP 指南](docs/mcp.md)。
 
 ## 数据
 
@@ -46,8 +54,8 @@ npm run dev
 打开终端显示的本地地址，即可在浏览器中体验。
 
 ```sh
-npm test        # 数据保存、文件夹、回忆计划和备份合并测试
-npm run build  # 类型检查和前端生产构建
+npm test        # 数据、编辑器、前端数据桥和真实 stdio MCP 测试
+npm run build  # 类型检查、前端生产构建和 MCP 打包
 ```
 
 ## 桌面应用
